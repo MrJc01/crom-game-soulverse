@@ -12,6 +12,13 @@ export interface InputState {
   left: boolean;
   right: boolean;
   run: boolean;
+  // Action Keys
+  action1: boolean;
+  action2: boolean;
+  action3: boolean;
+  action4: boolean;
+  action5: boolean;
+  attack: boolean;
 }
 
 // Global constants
@@ -65,6 +72,7 @@ export interface MonsterDefinition {
     aggroRadius: number;
     aiType: 'AGGRESSIVE' | 'PASSIVE' | 'FLEE';
     dropTable: string[]; // IDs of physical items
+    isDuelist: boolean; // TRUE = Triggers Card Battle, FALSE = Real-time Combat
   };
 
   // State B: Card Form
@@ -154,6 +162,14 @@ export interface PlayerProfile {
 export interface EquipResult {
   success: boolean;
   reason?: string;
+}
+
+// --- REWARD TYPES ---
+export interface LootResult {
+  essence: SoulEssence;
+  xpRoot: keyof MagicRoots;
+  xpAmount: number;
+  leveledUp: boolean;
 }
 
 // --- Battle Types (Unchanged) ---

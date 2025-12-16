@@ -11,6 +11,7 @@ import { BattleOverlay } from './components/ui/BattleOverlay';
 import { BattleProvider, useBattle } from './context/BattleContext';
 import { TransitionEffect } from './components/effects/TransitionEffect';
 import { MOCK_PLAYER } from './data/gameData';
+import { LootToast } from './components/ui/LootToast';
 
 // --- SELECTION RING COMPONENT ---
 const SelectionRing = ({ position }: { position: THREE.Vector3 }) => {
@@ -38,11 +39,11 @@ const SelectionRing = ({ position }: { position: THREE.Vector3 }) => {
 
 // --- GAME CONTENT WRAPPER ---
 const GameContent = () => {
-  const { isBattling, isTransitioning, startBattle } = useBattle();
+  const { isBattling, isTransitioning, startBattle, latestLoot, clearLoot } = useBattle();
   const playerRef = useRef<THREE.Group>(null);
   const [selectedTarget, setSelectedTarget] = useState<{ id: string, pos: THREE.Vector3 } | null>(null);
 
-  // Critical HP Logic for Vignette
+  // Critical HP Logic for Vignette (Immersive UI)
   const hpPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
   const isCritical = hpPercent < 0.3;
 
@@ -77,6 +78,9 @@ const GameContent = () => {
       {/* VFX: Battle Transition */}
       <TransitionEffect isActive={isTransitioning} />
 
+      {/* LOOT FEEDBACK */}
+      {latestLoot && <LootToast loot={latestLoot} onClose={clearLoot} />}
+
       {/* IMMERSIVE UI: CRITICAL HP VIGNETTE */}
       <div 
         className="pointer-events-none absolute inset-0 z-20 transition-opacity duration-1000 ease-in-out"
@@ -92,7 +96,7 @@ const GameContent = () => {
           </div>
       )}
 
-      {/* Battle Interface Overlay */}
+      {/* Battle Interface Overlay (Only shows during Card Battles) */}
       {isBattling && (
         <BattleOverlay />
       )}
@@ -122,7 +126,6 @@ const GameContent = () => {
           
           <NetworkManager />
           
-          {/* Debug Stats (can remove for prod) */}
           <Stats className="!absolute !bottom-0 !left-auto !right-0 !top-auto" />
         </Suspense>
       </Canvas>

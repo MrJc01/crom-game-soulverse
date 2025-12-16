@@ -7,17 +7,19 @@ import { useSpriteAnimator } from '../hooks/useSpriteAnimator';
 import { createCharacterSpriteSheet } from '../utils/graphicsUtils';
 import { MOVEMENT_SPEED, UNIT_SIZE, PlayerProfile } from '../types';
 import { socket } from '../utils/socketClient';
-import { checkCollision } from '../utils/physics';
+import { checkAttackHit } from '../utils/combatLogic'; // UPDATED: Logic from new file
+import { getActiveEntities, getEntityById } from '../utils/worldState'; 
+import { PlayerActionController } from './PlayerActionController';
 import { SoulMinionEffect } from './effects/SoulMinionEffect';
 import { MOCK_PLAYER } from '../data/gameData';
+import { useMobManager } from '../hooks/useMobManager'; // UPDATED: Manager Hook
 
 // --- CUSTOM SHADER: HEALTH DESATURATION ---
 const SpriteHealthMaterial = shaderMaterial(
   {
     map: new THREE.Texture(),
-    uHealth: 1.0, // 0.0 to 1.0 (Percentage)
+    uHealth: 1.0, 
   },
-  // Vertex Shader
   `
     varying vec2 vUv;
     void main() {
@@ -25,7 +27,6 @@ const SpriteHealthMaterial = shaderMaterial(
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
-  // Fragment Shader
   `
     uniform sampler2D map;
     uniform float uHealth;
@@ -33,16 +34,10 @@ const SpriteHealthMaterial = shaderMaterial(
     
     void main() {
       vec4 texColor = texture2D(map, vUv);
-      
-      // Calculate grayscale
       float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
       vec3 grayColor = vec3(gray);
-      
-      // Interpolate based on Health (1.0 = Color, 0.0 = Gray)
       vec3 finalColor = mix(grayColor, texColor.rgb, uHealth);
-      
       if (texColor.a < 0.5) discard;
-      
       gl_FragColor = vec4(finalColor, texColor.a);
     }
   `
@@ -62,12 +57,15 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const input = useInput();
   const { camera } = useThree();
   const [facingRight, setFacingRight] = useState(true);
+  
+  // Hook for Mob Logic (Damage/Battle)
+  const { processAttackOnMobs } = useMobManager();
 
   // Throttling for network emission
   const lastEmitTime = useRef(0);
   const EMIT_INTERVAL = 50; 
 
-  // Player Stats (Derived from Mock Data for now, usually props or context)
+  // Player Stats
   const healthPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
   const manaPercent = MOCK_PLAYER.currentMana / MOCK_PLAYER.maxMana;
 
@@ -81,8 +79,51 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const camForward = new THREE.Vector3();
   const camRight = new THREE.Vector3();
 
-  // Use simple collision for now (bounds of world)
-  const WORLD_BOUNDS = 1000;
+  // --- COMBAT LOGIC ---
+  const handleAttack = (slot: number, direction: THREE.Vector3) => {
+    if (locked || !groupRef.current) return;
+
+    // 1. Get all active mobs from registry
+    const activeMobs = getActiveEntities();
+    
+    // 2. Perform Hit Check (Cone: 2.5 units range, 60 degrees (PI/3))
+    const hits = checkAttackHit(
+      groupRef.current.position,
+      direction,
+      2.5, 
+      Math.PI / 3, 
+      activeMobs
+    );
+
+    if (hits.length > 0) {
+      // 3. Process Hits via Mob Manager
+      // Base Damage hardcoded to 20 for prototype (or fetch from MOCK_PLAYER stats)
+      const baseDamage = 20; 
+      const result = processAttackOnMobs(hits, baseDamage);
+
+      // 4. Feedback
+      if (result.hitCount > 0) {
+          // Visual feedback: Flash hit targets
+          hits.forEach(hit => {
+              const entity = getEntityById(hit.id);
+              if (entity && entity.ref) {
+                 // Direct THREE manipulation for immediate feedback
+                 // (Bot component also listens to HP changes for React state updates)
+                 const mesh = entity.ref.children.find(c => c.type === 'Mesh') as THREE.Mesh;
+                 if (mesh && mesh.material instanceof THREE.MeshBasicMaterial) {
+                     mesh.material.color.setHex(0xff0000); // Red Flash
+                 }
+              }
+          });
+          
+          // Kills Feedback
+          if (result.kills.length > 0) {
+            console.log(`Killed ${result.kills.length} enemies!`);
+            // Here we could trigger a sound or particle effect
+          }
+      }
+    }
+  };
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
@@ -122,8 +163,6 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
       const moveAmount = speed * delta;
       
       nextPos.copy(currentPos).addScaledVector(moveVec, moveAmount);
-
-      // Simple physics update
       groupRef.current.position.copy(nextPos);
     }
 
@@ -146,18 +185,24 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     <group ref={groupRef} position={[0, 0, 0]}>
       {/* 
         Mana Amulet 
-        Visual artifact showing Mana State.
-        Full Mana = Bright Blue. Empty = Black.
+        Visual artifact showing Mana State without HUD.
       */}
       <mesh position={[facingRight ? 0.1 : -0.1, 0.5, 0.05]} scale={0.1}>
         <dodecahedronGeometry args={[1, 0]} />
         <meshStandardMaterial 
           color="#3b82f6" 
           emissive="#3b82f6"
-          emissiveIntensity={manaPercent * 3} // Brightness based on Mana
+          emissiveIntensity={manaPercent * 3} 
           roughness={0.2}
         />
       </mesh>
+
+      {/* ACTION CONTROLLER: Handles inputs for 1-5 and Space */}
+      <PlayerActionController 
+        input={input} 
+        playerPos={groupRef.current?.position || new THREE.Vector3()} 
+        onAttack={handleAttack}
+      />
 
       <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
         <mesh 

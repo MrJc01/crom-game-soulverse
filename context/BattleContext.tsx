@@ -1,7 +1,10 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { DuelEngine, generateMockDeck, CardInstance } from '../game/DuelEngine';
-import { MOCK_PLAYER, MOCK_CARDS } from '../data/gameData';
-import { PlayerProfile, Card } from '../types';
+import { DuelEngine, generateMockDeck } from '../game/DuelEngine';
+import { MOCK_PLAYER } from '../data/gameData';
+import { MONSTER_DATABASE } from '../data/monsters';
+import { PlayerProfile, LootResult } from '../types';
+import { generateDeckForMob } from '../utils/deckGenerator';
+import { processBattleVictory } from '../logic/RewardSystem';
 
 interface BattleContextType {
   isBattling: boolean;
@@ -9,6 +12,8 @@ interface BattleContextType {
   engine: DuelEngine | null;
   startBattle: (opponentId: string) => void;
   endBattle: () => void;
+  latestLoot: LootResult | null;
+  clearLoot: () => void;
 }
 
 const BattleContext = createContext<BattleContextType | undefined>(undefined);
@@ -17,28 +22,44 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const [isBattling, setIsBattling] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [engine, setEngine] = useState<DuelEngine | null>(null);
+  const [latestLoot, setLatestLoot] = useState<LootResult | null>(null);
+  
+  // Track current opponent for reward logic
+  const [currentOpponentId, setCurrentOpponentId] = useState<string | null>(null);
 
   // Persistent Player State (In a real app, this would be its own Context or Redux slice)
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile>(MOCK_PLAYER);
 
   const startBattle = useCallback((opponentId: string) => {
     setIsTransitioning(true);
+    setCurrentOpponentId(opponentId);
 
-    // 1. Prepare Decks
-    // We use the player's actual deck from profile
+    // 1. Prepare Player Deck
     const playerDeck = [...playerProfile.grimoire.deck];
-    // We generate a mock deck for the NPC
-    const enemyDeck = generateMockDeck(20);
-
-    // 2. Initialize Engine
-    // Delay slightly to allow transition animation to cover the setup
+    
+    // 2. Prepare Enemy Data
+    const mobDef = MONSTER_DATABASE[opponentId];
+    
+    // Fallback if mob definition not found
+    const enemyDeck = mobDef ? generateDeckForMob(mobDef) : generateMockDeck(20);
+    const enemyName = mobDef ? mobDef.name : `Entity-${opponentId}`;
+    
+    // Initialize Engine
     setTimeout(() => {
       const newEngine = new DuelEngine(
-        playerProfile.name, // Player ID/Name
+        playerProfile.name, // Player ID
         playerDeck, 
-        `Entity-${opponentId}`, // Opponent Name
+        enemyName, // Opponent Name
         enemyDeck
       );
+      
+      // Override Default 20 HP with Mob-Specific Scaled HP
+      // Scale Factor: 4 (80 Physical HP = 20 Card HP)
+      if (mobDef) {
+         const scaledHp = Math.ceil(mobDef.physical.baseHp / 4);
+         newEngine.player2.maxHealth = scaledHp;
+         newEngine.player2.health = scaledHp;
+      }
       
       setEngine(newEngine);
       setIsBattling(true);
@@ -57,10 +78,8 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
     console.log("Processing Post-Battle Logic...");
 
-    // 1. Permadeath Logic: Check Graveyard
-    // Any card in the Player's Graveyard is effectively "Dead"/Broken in the physical world
+    // 1. Permadeath Logic (Graveyard check)
     const deadCards = engine.player1.graveyard.cards;
-    
     if (deadCards.length > 0) {
       setPlayerProfile(prev => {
         const updatedGrimoire = { ...prev.grimoire };
@@ -68,13 +87,11 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
         const updatedGraveyard = [...updatedGrimoire.graveyard];
 
         deadCards.forEach(deadInst => {
-            // Find the original card in the deck and move to graveyard/broken status
             const index = updatedDeck.findIndex(c => c.id === deadInst.originalId);
             if (index > -1) {
                 const card = updatedDeck[index];
                 card.status = 'BROKEN';
                 card.durability = 0;
-                
                 updatedDeck.splice(index, 1);
                 updatedGraveyard.push(card);
                 console.log(`[BattleContext] ${card.name} was BROKEN in battle.`);
@@ -83,28 +100,31 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
         updatedGrimoire.deck = updatedDeck;
         updatedGrimoire.graveyard = updatedGraveyard;
-
-        return {
-            ...prev,
-            grimoire: updatedGrimoire
-        };
+        return { ...prev, grimoire: updatedGrimoire };
       });
     }
 
-    // 2. Rewards (Simple XP bump for winning)
-    if (engine.winnerId === engine.player1.playerId) {
-        console.log("[BattleContext] Victory! Gaining Soul Power.");
-        setPlayerProfile(prev => ({
-            ...prev,
-            soulCap: prev.soulCap + 10 // Mock XP gain
-        }));
+    // 2. VICTORY REWARDS
+    if (engine.winnerId === engine.player1.playerId && currentOpponentId) {
+        console.log("[BattleContext] Victory!");
+        const mobDef = MONSTER_DATABASE[currentOpponentId];
+        
+        if (mobDef) {
+          const { loot, updatedProfile } = processBattleVictory(mobDef, playerProfile);
+          
+          setPlayerProfile(updatedProfile);
+          setLatestLoot(loot);
+        }
     }
 
     // 3. Cleanup
     setIsBattling(false);
     setEngine(null);
+    setCurrentOpponentId(null);
 
-  }, [engine]);
+  }, [engine, currentOpponentId, playerProfile]);
+
+  const clearLoot = () => setLatestLoot(null);
 
   return (
     <BattleContext.Provider value={{ 
@@ -112,7 +132,9 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       isTransitioning, 
       engine, 
       startBattle, 
-      endBattle 
+      endBattle,
+      latestLoot,
+      clearLoot
     }}>
       {children}
     </BattleContext.Provider>

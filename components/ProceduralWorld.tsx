@@ -3,11 +3,12 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { createGrassTexture, createRockTexture, createTreeTexture } from '../utils/graphicsUtils';
 import { CHUNK_SIZE, UNIT_SIZE, Biome } from '../types';
-import { BIOME_DATA, MONSTER_DATABASE } from '../data/monsters';
+import { BIOME_DATA } from '../data/monsters';
 import { Billboard } from '@react-three/drei';
 import { Bot } from './Bot';
+import { useMobManager } from '../hooks/useMobManager';
 
-// Simple deterministic hash for procedural gen
+// Simple deterministic hash for procedural gen (pseudo-noise)
 const pseudoRandom = (x: number, y: number) => {
   const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
   return n - Math.floor(n);
@@ -32,16 +33,16 @@ interface ChunkProps {
     tree: THREE.Texture;
     rock: THREE.Texture;
   };
+  spawnMobs: (cx: number, cy: number, biome: Biome) => any[];
 }
 
-const Chunk: React.FC<ChunkProps> = ({ cx, cy, playerRef, onSelectTarget, assets }) => {
+const Chunk: React.FC<ChunkProps> = ({ cx, cy, playerRef, onSelectTarget, assets, spawnMobs }) => {
   const biome = useMemo(() => getBiomeAt(cx, cy), [cx, cy]);
   const config = BIOME_DATA[biome];
 
   // Procedural content generation
   const { props, mobs } = useMemo(() => {
     const _props = [];
-    const _mobs = [];
     const seed = cx * 1000 + cy;
 
     // Generate Trees/Rocks
@@ -58,21 +59,11 @@ const Chunk: React.FC<ChunkProps> = ({ cx, cy, playerRef, onSelectTarget, assets
       });
     }
 
-    // Generate Mobs (Chance)
-    if (pseudoRandom(seed, 99) > 0.6 && config.monsterPool.length > 0) {
-      const mobType = config.monsterPool[0]; // Simplification
-      const def = MONSTER_DATABASE[mobType];
-      _mobs.push({
-        id: `mob-${cx}-${cy}`,
-        defId: mobType,
-        x: (cx * CHUNK_SIZE),
-        z: (cy * CHUNK_SIZE),
-        definition: def
-      });
-    }
+    // Generate Mobs using Manager Logic
+    const _mobs = spawnMobs(cx, cy, biome);
 
     return { props: _props, mobs: _mobs };
-  }, [cx, cy, biome, config]);
+  }, [cx, cy, biome, config, spawnMobs]);
 
   return (
     <group>
@@ -111,7 +102,7 @@ const Chunk: React.FC<ChunkProps> = ({ cx, cy, playerRef, onSelectTarget, assets
         <Bot 
           key={mob.id}
           id={mob.id}
-          defId={mob.defId} // Pass definition ID
+          defId={mob.defId} 
           initialX={mob.x}
           initialZ={mob.z}
           playerRef={playerRef}
@@ -129,12 +120,13 @@ interface ProceduralWorldProps {
 
 export const ProceduralWorld: React.FC<ProceduralWorldProps> = ({ playerRef, onSelectTarget }) => {
   const [currentChunk, setCurrentChunk] = useState({ x: 0, y: 0 });
+  const { spawnMobsForChunk } = useMobManager();
   
   // Memoize assets
   const assets = useMemo(() => ({
     tree: createTreeTexture(),
     rock: createRockTexture(),
-    grass: createGrassTexture() // Not used on plane directly now, using color
+    grass: createGrassTexture() 
   }), []);
 
   // Update current chunk based on player pos
@@ -175,6 +167,7 @@ export const ProceduralWorld: React.FC<ProceduralWorldProps> = ({ playerRef, onS
            playerRef={playerRef}
            onSelectTarget={onSelectTarget}
            assets={assets}
+           spawnMobs={spawnMobsForChunk}
          />
        ))}
     </group>

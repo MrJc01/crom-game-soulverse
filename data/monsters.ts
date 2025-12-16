@@ -14,7 +14,8 @@ export const MONSTER_DATABASE: Record<string, MonsterDefinition> = {
       speed: 4.5,
       aggroRadius: 8,
       aiType: 'AGGRESSIVE',
-      dropTable: ['ash_pile', 'magma_stone']
+      dropTable: ['ash_pile', 'magma_stone'],
+      isDuelist: true // BOSS: Triggers Card Battle
     },
     card: {
       cost: 4,
@@ -36,8 +37,9 @@ export const MONSTER_DATABASE: Record<string, MonsterDefinition> = {
       baseHp: 40,
       speed: 6.0,
       aggroRadius: 5,
-      aiType: 'FLEE', // Hard to catch
-      dropTable: ['ectoplasm']
+      aiType: 'FLEE', 
+      dropTable: ['ectoplasm'],
+      isDuelist: false // TRASH: Dies in real-time
     },
     card: {
       cost: 2,
@@ -60,7 +62,8 @@ export const MONSTER_DATABASE: Record<string, MonsterDefinition> = {
       speed: 2.0,
       aggroRadius: 3,
       aiType: 'PASSIVE',
-      dropTable: ['crystal_shard', 'stardust']
+      dropTable: ['crystal_shard', 'stardust'],
+      isDuelist: true
     },
     card: {
       cost: 6,
@@ -83,7 +86,8 @@ export const MONSTER_DATABASE: Record<string, MonsterDefinition> = {
       speed: 3.5,
       aggroRadius: 6,
       aiType: 'AGGRESSIVE',
-      dropTable: ['herbs', 'wood']
+      dropTable: ['herbs', 'wood'],
+      isDuelist: false
     },
     card: {
       cost: 3,

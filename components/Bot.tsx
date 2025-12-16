@@ -6,6 +6,7 @@ import { useSpriteAnimator } from '../hooks/useSpriteAnimator';
 import { createCharacterSpriteSheet } from '../utils/graphicsUtils';
 import { UNIT_SIZE } from '../types';
 import { MONSTER_DATABASE } from '../data/monsters';
+import { registerEntity, unregisterEntity, getEntityById } from '../utils/worldState';
 
 interface BotProps {
   id: string | number;
@@ -30,32 +31,85 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
   const targetPos = useRef(new THREE.Vector3(initialX, 0, initialZ));
   const [facingRight, setFacingRight] = useState(true);
   
+  // Local Death State
+  const [isDead, setIsDead] = useState(false);
+  const [deathScale, setDeathScale] = useState(1); // Animation value
+
   // Visuals
   const texture = useMemo(() => createCharacterSpriteSheet(definition.physical.spriteColor), [definition]);
   const [isHovered, setIsHovered] = useState(false);
-  
-  // Aura Ring Ref
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const auraRef = useRef<THREE.Mesh>(null);
 
   // Animation Hook
-  const isMoving = behaviorState !== 'IDLE';
+  const isMoving = behaviorState !== 'IDLE' && !isDead;
   useSpriteAnimator(texture, 4, 0.15, isMoving);
 
   const stateTimer = useRef(0);
   const nextDecisionTime = useRef(Math.random() * 3);
 
+  // --- HIT DETECTION & STATS REGISTRATION ---
+  useEffect(() => {
+    if (groupRef.current) {
+      registerEntity(String(id), {
+        id: String(id),
+        position: groupRef.current.position, // Live ref to position
+        defId: defId,
+        ref: groupRef.current,
+        // Combat Stats
+        currentHp: definition.physical.baseHp,
+        maxHp: definition.physical.baseHp,
+        isDuelist: definition.physical.isDuelist,
+        isDead: false
+      });
+    }
+    return () => unregisterEntity(String(id));
+  }, [id, defId, definition]);
+
   useFrame((state, delta) => {
     if (!groupRef.current) return;
+
+    // --- 1. HANDLE DEATH ANIMATION ---
+    const entityRecord = getEntityById(String(id));
+    
+    // Check if dead in registry
+    if (entityRecord && entityRecord.isDead) {
+       if (!isDead) setIsDead(true);
+       
+       // Shrink and fade
+       if (deathScale > 0) {
+          setDeathScale(prev => Math.max(0, prev - delta * 4));
+          groupRef.current.scale.set(deathScale, deathScale, deathScale);
+       }
+       return; // Stop AI logic
+    }
+
+    // --- 2. HIT FLASH EFFECT ---
+    if (entityRecord && entityRecord.currentHp < entityRecord.maxHp) {
+       // Simple logic: if recent damage, flash red. 
+       // For prototype, we just detect if color is not white and lerp back
+       if (materialRef.current) {
+          // If we want to flash red on hit, the attacker sets the color to red.
+          // Here we just recover.
+          if (materialRef.current.color.r < 1 || materialRef.current.color.g < 1 || materialRef.current.color.b < 1) {
+             // Recover to original tint
+             const targetColor = isHovered ? new THREE.Color(1, 0.7, 0.7) : new THREE.Color(1, 1, 1);
+             materialRef.current.color.lerp(targetColor, delta * 5);
+          }
+       }
+    }
 
     stateTimer.current += delta;
     const currentPos = groupRef.current.position;
 
-    // AURA ANIMATION
+    // AURA ANIMATION (Duelist)
     if (auraRef.current) {
         auraRef.current.rotation.z -= delta;
+        const scale = 1 + Math.sin(state.clock.elapsedTime * 2) * 0.1;
+        auraRef.current.scale.set(scale, scale, 1);
     }
 
-    // --- 1. PROXIMITY CHECK ---
+    // --- 3. AI LOGIC ---
     if (playerRef.current) {
       const distToPlayer = currentPos.distanceTo(playerRef.current.position);
       const aggroDist = definition.physical.aggroRadius;
@@ -68,12 +122,12 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
          }
       } else {
          if (behaviorState === 'CHASE' || behaviorState === 'FLEE') {
-             setBehaviorState('IDLE'); // Lost interest
+             setBehaviorState('IDLE');
          }
       }
     }
 
-    // --- 2. DECISION MAKING (IDLE/WANDER) ---
+    // Decision Making (IDLE/WANDER)
     if (behaviorState === 'IDLE' || behaviorState === 'WANDER') {
         if (stateTimer.current > nextDecisionTime.current) {
             stateTimer.current = 0;
@@ -81,7 +135,6 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
 
             if (Math.random() > 0.5) {
                 setBehaviorState('WANDER');
-                // Pick point near spawn
                 const angle = Math.random() * Math.PI * 2;
                 const dist = 1 + Math.random() * 3;
                 targetPos.current.set(initialX + Math.cos(angle)*dist, 0, initialZ + Math.sin(angle)*dist);
@@ -91,7 +144,7 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
         }
     }
 
-    // --- 3. MOVEMENT EXECUTION ---
+    // Movement
     let moveDir = new THREE.Vector3();
     const speed = definition.physical.speed * delta;
 
@@ -118,10 +171,13 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
 
   const handleClick = (e: any) => {
     e.stopPropagation(); 
-    if (groupRef.current) {
+    if (groupRef.current && !isDead) {
       onSelect(String(id), groupRef.current.position);
     }
   };
+
+  // If animation finished, unmount effectively by rendering null
+  if (deathScale <= 0.01) return null;
 
   return (
     <group 
@@ -131,8 +187,8 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
       onPointerOver={() => { document.body.style.cursor = 'pointer'; setIsHovered(true); }}
       onPointerOut={() => { document.body.style.cursor = 'auto'; setIsHovered(false); }}
     >
-      {/* AURA OF DREAD (Difficulty Indicator) */}
-      {definition.card.stats.attack >= 4 && (
+      {/* DUELIST AURA */}
+      {definition.physical.isDuelist && (
           <mesh ref={auraRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
              <ringGeometry args={[0.5, 0.6, 16]} />
              <meshBasicMaterial color="#ef4444" transparent opacity={0.6} side={THREE.DoubleSide} />
@@ -143,6 +199,7 @@ export const Bot: React.FC<BotProps> = ({ id, defId, initialX, initialZ, playerR
         <mesh position={[0, 0.5 * UNIT_SIZE, 0]} scale={[facingRight ? 1 : -1, 1, 1]}>
           <planeGeometry args={[UNIT_SIZE, UNIT_SIZE]} />
           <meshBasicMaterial 
+            ref={materialRef}
             map={texture} 
             transparent 
             alphaTest={0.5} 
