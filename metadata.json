@@ -1,0 +1,5 @@
+{
+  "name": "SoulVerse",
+  "description": "A foundational HD-2D MMORPG boilerplate using React Three Fiber. Features an orthographic camera setup where 1 unit equals 16 pixels, sharp pixel-art rendering, and WASD movement.",
+  "requestFramePermissions": []
+}

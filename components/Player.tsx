@@ -1,0 +1,187 @@
+import React, { useRef, useMemo, useState, forwardRef } from 'react';
+import { useFrame, useThree, extend } from '@react-three/fiber';
+import { Billboard, shaderMaterial } from '@react-three/drei';
+import * as THREE from 'three';
+import { useInput } from '../hooks/useInput';
+import { useSpriteAnimator } from '../hooks/useSpriteAnimator';
+import { createCharacterSpriteSheet } from '../utils/graphicsUtils';
+import { MOVEMENT_SPEED, UNIT_SIZE, PlayerProfile } from '../types';
+import { socket } from '../utils/socketClient';
+import { checkCollision } from '../utils/physics';
+import { SoulMinionEffect } from './effects/SoulMinionEffect';
+import { MOCK_PLAYER } from '../data/gameData';
+
+// --- CUSTOM SHADER: HEALTH DESATURATION ---
+const SpriteHealthMaterial = shaderMaterial(
+  {
+    map: new THREE.Texture(),
+    uHealth: 1.0, // 0.0 to 1.0 (Percentage)
+  },
+  // Vertex Shader
+  `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  // Fragment Shader
+  `
+    uniform sampler2D map;
+    uniform float uHealth;
+    varying vec2 vUv;
+    
+    void main() {
+      vec4 texColor = texture2D(map, vUv);
+      
+      // Calculate grayscale
+      float gray = dot(texColor.rgb, vec3(0.299, 0.587, 0.114));
+      vec3 grayColor = vec3(gray);
+      
+      // Interpolate based on Health (1.0 = Color, 0.0 = Gray)
+      vec3 finalColor = mix(grayColor, texColor.rgb, uHealth);
+      
+      if (texColor.a < 0.5) discard;
+      
+      gl_FragColor = vec4(finalColor, texColor.a);
+    }
+  `
+);
+
+extend({ SpriteHealthMaterial });
+
+interface PlayerProps {
+  locked?: boolean;
+}
+
+export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, ref) => {
+  const internalRef = useRef<THREE.Group>(null);
+  const groupRef = (ref as React.MutableRefObject<THREE.Group>) || internalRef;
+  const materialRef = useRef<any>(null);
+
+  const input = useInput();
+  const { camera } = useThree();
+  const [facingRight, setFacingRight] = useState(true);
+
+  // Throttling for network emission
+  const lastEmitTime = useRef(0);
+  const EMIT_INTERVAL = 50; 
+
+  // Player Stats (Derived from Mock Data for now, usually props or context)
+  const healthPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
+  const manaPercent = MOCK_PLAYER.currentMana / MOCK_PLAYER.maxMana;
+
+  const texture = useMemo(() => createCharacterSpriteSheet('#3b82f6'), []);
+  
+  const isMoving = !locked && (input.forward || input.backward || input.left || input.right);
+  useSpriteAnimator(texture, 4, 0.15, isMoving);
+
+  const moveVec = new THREE.Vector3();
+  const nextPos = new THREE.Vector3();
+  const camForward = new THREE.Vector3();
+  const camRight = new THREE.Vector3();
+
+  // Use simple collision for now (bounds of world)
+  const WORLD_BOUNDS = 1000;
+
+  useFrame((state, delta) => {
+    if (!groupRef.current) return;
+    
+    // Update Shader Uniforms
+    if (materialRef.current) {
+      materialRef.current.uHealth = THREE.MathUtils.lerp(materialRef.current.uHealth, healthPercent, 0.1);
+    }
+
+    if (locked) return;
+
+    const currentPos = groupRef.current.position;
+    const oldPosition = currentPos.clone();
+
+    // 1. Calculate Movement Relative to Camera
+    camera.getWorldDirection(camForward);
+    camForward.y = 0;
+    camForward.normalize();
+
+    camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+
+    moveVec.set(0, 0, 0);
+
+    if (input.forward) moveVec.add(camForward);
+    if (input.backward) moveVec.sub(camForward);
+    if (input.right) moveVec.add(camRight);
+    if (input.left) moveVec.sub(camRight);
+
+    if (moveVec.lengthSq() > 0) {
+      moveVec.normalize();
+      
+      const dot = moveVec.dot(camRight);
+      if (dot > 0.1) setFacingRight(true);
+      if (dot < -0.1) setFacingRight(false);
+
+      const speed = input.run ? MOVEMENT_SPEED * 1.5 : MOVEMENT_SPEED;
+      const moveAmount = speed * delta;
+      
+      nextPos.copy(currentPos).addScaledVector(moveVec, moveAmount);
+
+      // Simple physics update
+      groupRef.current.position.copy(nextPos);
+    }
+
+    // Network Emission
+    const now = Date.now();
+    if (now - lastEmitTime.current > EMIT_INTERVAL) {
+      if (groupRef.current.position.distanceToSquared(oldPosition) > 0.0001) {
+        socket.emit('playerMovement', {
+          x: groupRef.current.position.x,
+          y: groupRef.current.position.y,
+          z: groupRef.current.position.z,
+          facingRight: facingRight
+        });
+        lastEmitTime.current = now;
+      }
+    }
+  });
+
+  return (
+    <group ref={groupRef} position={[0, 0, 0]}>
+      {/* 
+        Mana Amulet 
+        Visual artifact showing Mana State.
+        Full Mana = Bright Blue. Empty = Black.
+      */}
+      <mesh position={[facingRight ? 0.1 : -0.1, 0.5, 0.05]} scale={0.1}>
+        <dodecahedronGeometry args={[1, 0]} />
+        <meshStandardMaterial 
+          color="#3b82f6" 
+          emissive="#3b82f6"
+          emissiveIntensity={manaPercent * 3} // Brightness based on Mana
+          roughness={0.2}
+        />
+      </mesh>
+
+      <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
+        <mesh 
+          position={[0, 0.5 * UNIT_SIZE, 0]} 
+          scale={[facingRight ? 1 : -1, 1, 1]} 
+        >
+          <planeGeometry args={[UNIT_SIZE, UNIT_SIZE]} />
+          
+          {/* @ts-ignore */}
+          <spriteHealthMaterial 
+            ref={materialRef} 
+            map={texture} 
+            transparent 
+            side={THREE.DoubleSide} 
+          />
+        </mesh>
+      </Billboard>
+
+      <SoulMinionEffect count={3} />
+
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+        <circleGeometry args={[0.3, 16]} />
+        <meshBasicMaterial color="black" opacity={0.3} transparent />
+      </mesh>
+    </group>
+  );
+});

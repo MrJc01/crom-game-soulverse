@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <title>SoulVerse | HD-2D Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Ensure crisp rendering for the canvas */
+      canvas {
+        image-rendering: pixelated; /* Firefox */
+        image-rendering: -moz-crisp-edges; /* Firefox */
+        image-rendering: -webkit-crisp-edges; /* Webkit */
+        image-rendering: crisp-edges;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #111;
+        color: white;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "three": "https://esm.sh/three@^0.182.0",
+    "@react-three/drei": "https://esm.sh/@react-three/drei@^10.7.7",
+    "@react-three/fiber": "https://esm.sh/@react-three/fiber@^9.4.2",
+    "socket.io-client": "https://esm.sh/socket.io-client@^4.8.1"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
