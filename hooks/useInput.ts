@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { InputState, MouseInput } from '../types';
 
-export const useInput = (): InputState => {
+export const useInput = () => {
   const [keys, setKeys] = useState<Record<string, boolean>>({});
   const [mouse, setMouse] = useState<MouseInput>({
     left: false,
@@ -9,6 +9,10 @@ export const useInput = (): InputState => {
     x: 0,
     y: 0,
   });
+
+  // Rastreio de cliques "reais" vs arrastar
+  const [lastClickPosition, setLastClickPosition] = useState<{ x: number, y: number } | null>(null);
+  const clickStartPos = useRef<{ x: number, y: number }>({ x: 0, y: 0 });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -20,6 +24,7 @@ export const useInput = (): InputState => {
     };
 
     const handleMouseDown = (e: MouseEvent) => {
+      clickStartPos.current = { x: e.clientX, y: e.clientY };
       setMouse((prev) => ({
         ...prev,
         left: e.button === 0 ? true : prev.left,
@@ -28,6 +33,16 @@ export const useInput = (): InputState => {
     };
 
     const handleMouseUp = (e: MouseEvent) => {
+      // Distância percorrida
+      const dx = e.clientX - clickStartPos.current.x;
+      const dy = e.clientY - clickStartPos.current.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+
+      // Se moveu menos de 5 pixels, é um clique válido para andar
+      if (dist < 5 && e.button === 0) {
+        setLastClickPosition({ x: e.clientX, y: e.clientY });
+      }
+
       setMouse((prev) => ({
         ...prev,
         left: e.button === 0 ? false : prev.left,
@@ -39,7 +54,6 @@ export const useInput = (): InputState => {
       setMouse((prev) => ({ ...prev, x: e.clientX, y: e.clientY }));
     };
 
-    // Disable Context Menu for Right Click attacks
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
     };
@@ -61,5 +75,5 @@ export const useInput = (): InputState => {
     };
   }, []);
 
-  return { keys, mouse };
+  return { keys, mouse, lastClickPosition };
 };

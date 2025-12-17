@@ -15,7 +15,6 @@ import { MOCK_PLAYER } from '../data/gameData';
 import { useMobManager } from '../hooks/useMobManager';
 import { ChunkCaptureManager } from './world/ChunkCaptureManager';
 
-// --- CUSTOM SHADER: HEALTH DESATURATION ---
 const SpriteHealthMaterial = shaderMaterial(
   {
     map: new THREE.Texture(),
@@ -60,17 +59,14 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const groupRef = (ref as React.MutableRefObject<THREE.Group>) || internalRef;
   const materialRef = useRef<any>(null);
 
-  const { keys, mouse } = useInput();
+  const { keys, mouse, lastClickPosition } = useInput();
   const { camera, raycaster } = useThree();
   const [facingRight, setFacingRight] = useState(true);
   
   // Point-and-Click State
   const [targetPosition, setTargetPosition] = useState<THREE.Vector3 | null>(null);
 
-  // Hook for Mob Logic (Damage/Battle)
   const { processAttackOnMobs } = useMobManager();
-
-  // Throttling for network emission
   const lastEmitTime = useRef(0);
   const EMIT_INTERVAL = 50; 
 
@@ -79,18 +75,16 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
 
   const texture = useMemo(() => createCharacterSpriteSheet('#3b82f6'), []);
   
-  // Animation state driven by whether we have a target position
-  const isMoving = !locked && targetPosition !== null;
+  // Verifica se está se movendo (Seja por WASD ou Clique)
+  const isWASDMoving = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+  const isClickMoving = targetPosition !== null;
+  const isMoving = !locked && (isWASDMoving || isClickMoving);
+
   useSpriteAnimator(texture, 4, 0.15, isMoving);
 
-  // --- COMBAT LOGIC CALLBACK ---
   const handleAttack = (slot: number, direction: THREE.Vector3) => {
     if (locked || !groupRef.current) return;
-
-    // 1. Get all active mobs from registry
     const activeMobs = getActiveEntities();
-    
-    // 2. Perform Hit Check (Cone: 4.0 units range, 45 degrees)
     const hits = checkAttackHit(
       groupRef.current.position,
       direction,
@@ -100,11 +94,8 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     );
 
     if (hits.length > 0) {
-      // 3. Process Hits (Damage scales with slot for fun)
       const baseDamage = 10 + (slot * 5); 
       const result = processAttackOnMobs(hits, baseDamage);
-
-      // 4. Feedback
       if (result.hitCount > 0) {
           hits.forEach(hit => {
               const entity = getEntityById(hit.id);
@@ -121,14 +112,13 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
 
   // --- MOUSE CLICK NAVIGATION ---
   useEffect(() => {
-    if (mouse.left && !locked) {
-        // Raycast to floor
+    if (lastClickPosition && !locked) {
+        // Se clicar, definimos um alvo e cancelamos qualquer inércia anterior
         const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
         
-        // Map mouse screen coords to NDC
         const ndc = new THREE.Vector2(
-            (mouse.x / window.innerWidth) * 2 - 1,
-            -(mouse.y / window.innerHeight) * 2 + 1
+            (lastClickPosition.x / window.innerWidth) * 2 - 1,
+            -(lastClickPosition.y / window.innerHeight) * 2 + 1
         );
         
         raycaster.setFromCamera(ndc, camera);
@@ -139,7 +129,7 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
             setTargetPosition(target);
         }
     }
-  }, [mouse.left, mouse.x, mouse.y, locked, camera, raycaster]);
+  }, [lastClickPosition, locked, camera, raycaster]);
 
   useFrame((state, delta) => {
     if (!groupRef.current) return;
@@ -158,26 +148,56 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     const currentPos = groupRef.current.position;
     const oldPosition = currentPos.clone();
 
-    // --- MOVEMENT LOGIC (Linear Interpolation towards Click) ---
-    if (targetPosition) {
+    // --- PRIORIDADE DE MOVIMENTO ---
+    // Se pressionar WASD, cancela o movimento de clique
+    if (isWASDMoving) {
+        setTargetPosition(null);
+
+        // Calcular vetores relativos à câmara
+        const camForward = new THREE.Vector3();
+        camera.getWorldDirection(camForward);
+        camForward.y = 0;
+        camForward.normalize();
+
+        const camRight = new THREE.Vector3();
+        camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
+
+        const moveVec = new THREE.Vector3(0, 0, 0);
+
+        if (keys['KeyW']) moveVec.add(camForward);
+        if (keys['KeyS']) moveVec.sub(camForward);
+        
+        // CORREÇÃO DOS EIXOS: A = Esquerda (Subtrair), D = Direita (Somar)
+        if (keys['KeyA']) moveVec.sub(camRight); 
+        if (keys['KeyD']) moveVec.add(camRight);
+
+        if (moveVec.lengthSq() > 0) {
+            moveVec.normalize();
+            // Facing
+            const dot = moveVec.dot(camRight);
+            if (dot > 0.1) setFacingRight(true);
+            if (dot < -0.1) setFacingRight(false);
+
+            groupRef.current.position.addScaledVector(moveVec, MOVEMENT_SPEED * delta);
+        }
+    } 
+    // --- MOVIMENTO POR CLIQUE ---
+    else if (targetPosition) {
         const direction = new THREE.Vector3().subVectors(targetPosition, currentPos);
         const distance = direction.length();
         
         if (distance > 0.1) {
             direction.normalize();
             
-            // Facing
+            // Facing relative to movement x
             if (direction.x > 0.1) setFacingRight(true);
             if (direction.x < -0.1) setFacingRight(false);
             
-            // Move
             const moveStep = MOVEMENT_SPEED * delta;
-            // Don't overshoot
             const actualMove = Math.min(moveStep, distance);
             
             groupRef.current.position.addScaledVector(direction, actualMove);
         } else {
-            // Arrived
             setTargetPosition(null);
         }
     }

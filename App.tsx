@@ -85,9 +85,6 @@ const GameContent = () => {
       {/* VFX: Battle Transition */}
       <TransitionEffect isActive={isTransitioning} />
 
-      {/* LOOT FEEDBACK */}
-      {latestLoot && <LootToast loot={latestLoot} onClose={clearLoot} />}
-
       {/* IMMERSIVE UI: CRITICAL HP VIGNETTE */}
       <div 
         className="pointer-events-none absolute inset-0 z-20 transition-opacity duration-1000 ease-in-out"
@@ -103,33 +100,50 @@ const GameContent = () => {
           </div>
       )}
 
-      {/* Battle Interface Overlay */}
-      {isBattling && (
-        <BattleOverlay />
-      )}
+      {/* --- UI LAYER (Z-INDEX 50) --- */}
+      <div className="absolute inset-0 z-50 pointer-events-none">
+        
+        {/* LOOT FEEDBACK */}
+        <div className="pointer-events-auto">
+           {latestLoot && <LootToast loot={latestLoot} onClose={clearLoot} />}
+        </div>
 
-      {/* Crafting Interface Overlay */}
-      {isCrafting && (
-        <CraftingOverlay onClose={() => setIsCrafting(false)} />
-      )}
-
-      {/* GLOBAL UI OVERLAYS (When not in battle/menu) */}
-      {!isBattling && !isCrafting && (
-        <>
-          <HotbarHUD />
-          <SpellbookUI />
-          
-          {/* Controls Hint */}
-          <div className="absolute bottom-4 right-4 text-xs text-slate-500 font-mono pointer-events-none">
-             [LMB] Move • [RMB] Cast Ability (1-3) • [L] Channel Land • [M] Grimoire • [E] Interact
+        {/* Battle Interface Overlay */}
+        {isBattling && (
+          <div className="pointer-events-auto w-full h-full">
+             <BattleOverlay />
           </div>
-        </>
-      )}
+        )}
+
+        {/* Crafting Interface Overlay */}
+        {isCrafting && (
+          <div className="pointer-events-auto w-full h-full">
+            <CraftingOverlay onClose={() => setIsCrafting(false)} />
+          </div>
+        )}
+
+        {/* HUD & SPELLBOOK (Only visible in World) */}
+        {!isBattling && !isCrafting && (
+          <>
+            <div className="pointer-events-auto">
+               <HotbarHUD />
+            </div>
+            <div className="pointer-events-auto">
+               <SpellbookUI />
+            </div>
+            
+            {/* Controls Hint */}
+            <div className="absolute bottom-4 right-4 text-xs text-slate-500 font-mono pointer-events-none">
+               [WASD/LMB] Move • [RMB] Cast Ability (1-3) • [L] Channel Land • [M] Grimoire
+            </div>
+          </>
+        )}
+      </div>
 
       {/* 3D Scene */}
       <Canvas
         shadows={false}
-        dpr={[1, 1.5]} // Clamp DPR to avoid high res causing crash
+        dpr={[1, 1.5]} 
         gl={{ 
           antialias: false,
           stencil: false,
@@ -153,7 +167,6 @@ const GameContent = () => {
               onSelectTarget={handleTargetSelect}
             />
 
-            {/* ADDED: Soul Forge Object */}
             <SoulForge 
               position={[8, 0, 8]} 
               playerRef={playerRef} 

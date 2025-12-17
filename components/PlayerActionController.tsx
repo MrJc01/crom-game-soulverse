@@ -50,8 +50,6 @@ export const PlayerActionController: React.FC<ActionControllerProps> = ({ input,
     if (input.mouse.right) {
       const now = Date.now();
       const config = SPELL_CONFIG[activeSlot];
-      
-      // Default basic attack cooldown if no config
       const cdDuration = config ? config.cd : 300; 
 
       if (!cooldowns.current[activeSlot] || now > cooldowns.current[activeSlot]) {
@@ -66,20 +64,26 @@ export const PlayerActionController: React.FC<ActionControllerProps> = ({ input,
         const target = new THREE.Vector3();
         raycaster.ray.intersectPlane(floorPlane, target);
 
+        // Calculate Direction
+        const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
+        direction.y = 0; // Keep flat
+
         // Execute Ability
         if (config) {
             if (config.type === 'PROJECTILE') {
-                const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
-                spawnProjectile('FIREBALL', playerPos.clone().add(new THREE.Vector3(0, 0.5, 0)), direction);
+                // OFFSET SPAWN: 1.5 units forward + 1 unit up
+                const spawnOrigin = playerPos.clone()
+                    .add(direction.clone().multiplyScalar(1.5))
+                    .add(new THREE.Vector3(0, 1, 0));
+                
+                spawnProjectile('FIREBALL', spawnOrigin, direction);
             } else if (config.type === 'AOE') {
                 spawnEffect('HEAL_BURST', target);
-                // In a real app, apply healing logic here
             } else if (config.type === 'WALL') {
                 spawnEffect('EARTH_WALL', target);
             }
         } else {
-            // Default Melee logic (Slots 4-0 for now)
-            const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
+            // Melee
             onAttack(activeSlot, direction);
         }
 
@@ -101,7 +105,6 @@ export const PlayerActionController: React.FC<ActionControllerProps> = ({ input,
 
   return (
     <group position={[0, 1.2, 0]}>
-      {/* Floating Indicator */}
       <mesh>
         <octahedronGeometry args={[0.08, 0]} />
         <meshBasicMaterial color={getSlotColor()} wireframe />
