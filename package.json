@@ -11,10 +11,10 @@
   "dependencies": {
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "three": "^0.182.0",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.4.2",
-    "socket.io-client": "^4.8.1"
+    "three": "0.165.0",
+    "@react-three/drei": "9.107.0",
+    "@react-three/fiber": "8.16.8",
+    "socket.io-client": "4.8.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

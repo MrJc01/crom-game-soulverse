@@ -12,6 +12,8 @@ import { BattleProvider, useBattle } from './context/BattleContext';
 import { TransitionEffect } from './components/effects/TransitionEffect';
 import { MOCK_PLAYER } from './data/gameData';
 import { LootToast } from './components/ui/LootToast';
+import { SoulForge } from './components/world/SoulForge';
+import { CraftingOverlay } from './components/ui/CraftingOverlay';
 
 // --- SELECTION RING COMPONENT ---
 const SelectionRing = ({ position }: { position: THREE.Vector3 }) => {
@@ -42,6 +44,9 @@ const GameContent = () => {
   const { isBattling, isTransitioning, startBattle, latestLoot, clearLoot } = useBattle();
   const playerRef = useRef<THREE.Group>(null);
   const [selectedTarget, setSelectedTarget] = useState<{ id: string, pos: THREE.Vector3 } | null>(null);
+  
+  // Crafting State
+  const [isCrafting, setIsCrafting] = useState(false);
 
   // Critical HP Logic for Vignette (Immersive UI)
   const hpPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
@@ -55,10 +60,9 @@ const GameContent = () => {
   }, []);
 
   const handleTargetSelect = (id: string, pos: THREE.Vector3) => {
-    if (isBattling) return;
+    if (isBattling || isCrafting) return;
 
     if (id.startsWith('mob-') || id.startsWith('bot-')) {
-       // Extract mob type if needed, or just start battle
        startBattle(id);
        setSelectedTarget(null); 
     } else {
@@ -67,13 +71,13 @@ const GameContent = () => {
   };
 
   const handleGroundClick = () => {
-    if (!isBattling) {
+    if (!isBattling && !isCrafting) {
       setSelectedTarget(null);
     }
   };
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
+    <div className="relative w-full h-screen bg-black overflow-hidden" style={{ minHeight: '100vh', minWidth: '100vw' }}>
       
       {/* VFX: Battle Transition */}
       <TransitionEffect isActive={isTransitioning} />
@@ -96,33 +100,54 @@ const GameContent = () => {
           </div>
       )}
 
-      {/* Battle Interface Overlay (Only shows during Card Battles) */}
+      {/* Battle Interface Overlay */}
       {isBattling && (
         <BattleOverlay />
       )}
 
+      {/* Crafting Interface Overlay */}
+      {isCrafting && (
+        <CraftingOverlay onClose={() => setIsCrafting(false)} />
+      )}
+
       {/* 3D Scene */}
       <Canvas
-        shadows
+        shadows={false}
+        dpr={[1, 1.5]} // Clamp DPR to avoid high res causing crash
         gl={{ 
-          antialias: false, 
-          pixelRatio: window.devicePixelRatio, 
-          powerPreference: "high-performance"
+          antialias: false,
+          stencil: false,
+          depth: true,
+          alpha: true,
+          powerPreference: "high-performance",
+          failIfMajorPerformanceCaveat: false, 
+          preserveDrawingBuffer: false, // Fix: Disabled to save memory and prevent BindToCurrentSequence failed
         }}
         onPointerMissed={handleGroundClick}
+        onCreated={({ gl }) => {
+          gl.setClearColor(0x000000, 0); 
+        }}
       >
         <Suspense fallback={null}>
           <PixelCamera targetRef={playerRef} />
           
-          {/* Replaced Static World with Procedural Chunk Manager */}
           <ProceduralWorld 
             playerRef={playerRef}
             onSelectTarget={handleTargetSelect}
           />
+
+          {/* ADDED: Soul Forge Object */}
+          <SoulForge 
+            position={[8, 0, 8]} 
+            playerRef={playerRef} 
+            isOpen={isCrafting}
+            onToggleCrafting={setIsCrafting}
+          />
           
           {selectedTarget && <SelectionRing position={selectedTarget.pos} />}
 
-          <Player ref={playerRef} locked={isBattling || isTransitioning} />
+          {/* Player locked if battling or crafting */}
+          <Player ref={playerRef} locked={isBattling || isTransitioning || isCrafting} />
           
           <NetworkManager />
           

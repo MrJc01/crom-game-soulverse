@@ -14,6 +14,10 @@ interface BattleContextType {
   endBattle: () => void;
   latestLoot: LootResult | null;
   clearLoot: () => void;
+  
+  // Player State Exposure for Crafting/Persistence
+  playerProfile: PlayerProfile;
+  updatePlayerProfile: (profile: PlayerProfile) => void;
 }
 
 const BattleContext = createContext<BattleContextType | undefined>(undefined);
@@ -27,7 +31,7 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   // Track current opponent for reward logic
   const [currentOpponentId, setCurrentOpponentId] = useState<string | null>(null);
 
-  // Persistent Player State (In a real app, this would be its own Context or Redux slice)
+  // Persistent Player State
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile>(MOCK_PLAYER);
 
   const startBattle = useCallback((opponentId: string) => {
@@ -54,7 +58,6 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       );
       
       // Override Default 20 HP with Mob-Specific Scaled HP
-      // Scale Factor: 4 (80 Physical HP = 20 Card HP)
       if (mobDef) {
          const scaledHp = Math.ceil(mobDef.physical.baseHp / 4);
          newEngine.player2.maxHealth = scaledHp;
@@ -134,7 +137,9 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       startBattle, 
       endBattle,
       latestLoot,
-      clearLoot
+      clearLoot,
+      playerProfile,
+      updatePlayerProfile: setPlayerProfile
     }}>
       {children}
     </BattleContext.Provider>

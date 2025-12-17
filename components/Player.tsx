@@ -7,12 +7,12 @@ import { useSpriteAnimator } from '../hooks/useSpriteAnimator';
 import { createCharacterSpriteSheet } from '../utils/graphicsUtils';
 import { MOVEMENT_SPEED, UNIT_SIZE, PlayerProfile } from '../types';
 import { socket } from '../utils/socketClient';
-import { checkAttackHit } from '../utils/combatLogic'; // UPDATED: Logic from new file
+import { checkAttackHit } from '../utils/combatLogic';
 import { getActiveEntities, getEntityById } from '../utils/worldState'; 
 import { PlayerActionController } from './PlayerActionController';
 import { SoulMinionEffect } from './effects/SoulMinionEffect';
 import { MOCK_PLAYER } from '../data/gameData';
-import { useMobManager } from '../hooks/useMobManager'; // UPDATED: Manager Hook
+import { useMobManager } from '../hooks/useMobManager';
 
 // --- CUSTOM SHADER: HEALTH DESATURATION ---
 const SpriteHealthMaterial = shaderMaterial(
@@ -65,10 +65,12 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const lastEmitTime = useRef(0);
   const EMIT_INTERVAL = 50; 
 
-  // Player Stats
+  // Player Stats (Ideally these come from context, using Mock for visuals in 3D)
   const healthPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
   const manaPercent = MOCK_PLAYER.currentMana / MOCK_PLAYER.maxMana;
 
+  // --- ASSET LOADING FIX ---
+  // Revert to procedural texture generation to avoid missing file errors
   const texture = useMemo(() => createCharacterSpriteSheet('#3b82f6'), []);
   
   const isMoving = !locked && (input.forward || input.backward || input.left || input.right);
@@ -97,30 +99,20 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
 
     if (hits.length > 0) {
       // 3. Process Hits via Mob Manager
-      // Base Damage hardcoded to 20 for prototype (or fetch from MOCK_PLAYER stats)
       const baseDamage = 20; 
       const result = processAttackOnMobs(hits, baseDamage);
 
       // 4. Feedback
       if (result.hitCount > 0) {
-          // Visual feedback: Flash hit targets
           hits.forEach(hit => {
               const entity = getEntityById(hit.id);
               if (entity && entity.ref) {
-                 // Direct THREE manipulation for immediate feedback
-                 // (Bot component also listens to HP changes for React state updates)
                  const mesh = entity.ref.children.find(c => c.type === 'Mesh') as THREE.Mesh;
                  if (mesh && mesh.material instanceof THREE.MeshBasicMaterial) {
-                     mesh.material.color.setHex(0xff0000); // Red Flash
+                     mesh.material.color.setHex(0xff0000); 
                  }
               }
           });
-          
-          // Kills Feedback
-          if (result.kills.length > 0) {
-            console.log(`Killed ${result.kills.length} enemies!`);
-            // Here we could trigger a sound or particle effect
-          }
       }
     }
   };
@@ -183,10 +175,7 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
-      {/* 
-        Mana Amulet 
-        Visual artifact showing Mana State without HUD.
-      */}
+      {/* Mana Amulet */}
       <mesh position={[facingRight ? 0.1 : -0.1, 0.5, 0.05]} scale={0.1}>
         <dodecahedronGeometry args={[1, 0]} />
         <meshStandardMaterial 
@@ -197,7 +186,6 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
         />
       </mesh>
 
-      {/* ACTION CONTROLLER: Handles inputs for 1-5 and Space */}
       <PlayerActionController 
         input={input} 
         playerPos={groupRef.current?.position || new THREE.Vector3()} 
