@@ -1,68 +1,65 @@
 import { useState, useEffect } from 'react';
-import { InputState } from '../types';
+import { InputState, MouseInput } from '../types';
 
 export const useInput = (): InputState => {
-  const [input, setInput] = useState<InputState>({
-    forward: false,
-    backward: false,
+  const [keys, setKeys] = useState<Record<string, boolean>>({});
+  const [mouse, setMouse] = useState<MouseInput>({
     left: false,
     right: false,
-    run: false,
-    action1: false,
-    action2: false,
-    action3: false,
-    action4: false,
-    action5: false,
-    attack: false,
+    x: 0,
+    y: 0,
   });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      switch (e.code) {
-        case 'KeyW': setInput((prev) => ({ ...prev, forward: true })); break;
-        case 'KeyA': setInput((prev) => ({ ...prev, left: true })); break;
-        case 'KeyS': setInput((prev) => ({ ...prev, backward: true })); break;
-        case 'KeyD': setInput((prev) => ({ ...prev, right: true })); break;
-        case 'ShiftLeft':
-        case 'ShiftRight': setInput((prev) => ({ ...prev, run: true })); break;
-        
-        // Actions
-        case 'Space': setInput((prev) => ({ ...prev, attack: true })); break;
-        case 'Digit1': setInput((prev) => ({ ...prev, action1: true })); break;
-        case 'Digit2': setInput((prev) => ({ ...prev, action2: true })); break;
-        case 'Digit3': setInput((prev) => ({ ...prev, action3: true })); break;
-        case 'Digit4': setInput((prev) => ({ ...prev, action4: true })); break;
-        case 'Digit5': setInput((prev) => ({ ...prev, action5: true })); break;
-      }
+      setKeys((prev) => ({ ...prev, [e.code]: true }));
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      switch (e.code) {
-        case 'KeyW': setInput((prev) => ({ ...prev, forward: false })); break;
-        case 'KeyA': setInput((prev) => ({ ...prev, left: false })); break;
-        case 'KeyS': setInput((prev) => ({ ...prev, backward: false })); break;
-        case 'KeyD': setInput((prev) => ({ ...prev, right: false })); break;
-        case 'ShiftLeft':
-        case 'ShiftRight': setInput((prev) => ({ ...prev, run: false })); break;
-        
-        // Actions
-        case 'Space': setInput((prev) => ({ ...prev, attack: false })); break;
-        case 'Digit1': setInput((prev) => ({ ...prev, action1: false })); break;
-        case 'Digit2': setInput((prev) => ({ ...prev, action2: false })); break;
-        case 'Digit3': setInput((prev) => ({ ...prev, action3: false })); break;
-        case 'Digit4': setInput((prev) => ({ ...prev, action4: false })); break;
-        case 'Digit5': setInput((prev) => ({ ...prev, action5: false })); break;
-      }
+      setKeys((prev) => ({ ...prev, [e.code]: false }));
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      setMouse((prev) => ({
+        ...prev,
+        left: e.button === 0 ? true : prev.left,
+        right: e.button === 2 ? true : prev.right
+      }));
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      setMouse((prev) => ({
+        ...prev,
+        left: e.button === 0 ? false : prev.left,
+        right: e.button === 2 ? false : prev.right
+      }));
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setMouse((prev) => ({ ...prev, x: e.clientX, y: e.clientY }));
+    };
+
+    // Disable Context Menu for Right Click attacks
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('contextmenu', handleContextMenu);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('contextmenu', handleContextMenu);
     };
   }, []);
 
-  return input;
+  return { keys, mouse };
 };

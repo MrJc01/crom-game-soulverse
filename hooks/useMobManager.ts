@@ -4,7 +4,6 @@ import { ActiveEntity } from '../utils/worldState';
 import { applyDamageToEntity } from '../utils/combatLogic';
 import { MONSTER_DATABASE, BIOME_DATA } from '../data/monsters';
 import { CHUNK_SIZE, Biome } from '../types';
-import { MOCK_PLAYER } from '../data/gameData';
 
 export interface CombatInteractionResult {
   hitCount: number;
@@ -19,12 +18,10 @@ const pseudoRandom = (seed: number) => {
 };
 
 export const useMobManager = () => {
-  const { startBattle } = useBattle();
+  const { startBattle, gainFragments } = useBattle();
 
   /**
    * Deterministically spawns mobs for a given chunk.
-   * This logic is extracted here so ProceduralWorld delegates the "What" to spawn,
-   * while maintaining the "Where" (Chunk grid).
    */
   const spawnMobsForChunk = useCallback((cx: number, cy: number, biome: Biome) => {
     const seed = cx * 1000 + cy;
@@ -54,7 +51,6 @@ export const useMobManager = () => {
 
   /**
    * Processes an attack on a list of hit entities.
-   * Handles the divergence between "Trash Mobs" (Real-time death) and "Duelists" (Card Battle).
    */
   const processAttackOnMobs = useCallback((hits: ActiveEntity[], baseDamage: number): CombatInteractionResult => {
     const kills: string[] = [];
@@ -79,17 +75,13 @@ export const useMobManager = () => {
         if (isDead) {
           kills.push(entity.id);
           
-          // --- LOOT SYSTEM ---
-          // Access the definition to find the drop table
+          // --- FRAGMENT DROP SYSTEM ---
+          // Access the definition
           const def = MONSTER_DATABASE[entity.defId];
-          if (def && def.physical.dropTable && def.physical.dropTable.length > 0) {
-             const dropIndex = Math.floor(Math.random() * def.physical.dropTable.length);
-             const droppedItem = def.physical.dropTable[dropIndex];
-             
-             // Add to Player Inventory (Mutating Mock Data)
-             MOCK_PLAYER.backpack.items.push(droppedItem);
-             console.log(`[Loot] ${entity.defId} dropped: ${droppedItem}`);
-          }
+          // Drops 1-3 fragments
+          const fragmentAmount = 1 + Math.floor(Math.random() * 3);
+          gainFragments(fragmentAmount);
+          console.log(`[Loot] ${entity.defId} dropped ${fragmentAmount} Fragments.`);
         }
       }
     });
@@ -99,7 +91,7 @@ export const useMobManager = () => {
       kills,
       battleTriggered
     };
-  }, [startBattle]);
+  }, [startBattle, gainFragments]);
 
   return {
     spawnMobsForChunk,

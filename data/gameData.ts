@@ -98,6 +98,10 @@ export const MOCK_PLAYER: PlayerProfile = {
     black: 2
   },
   
+  // Resources
+  fragments: 25,
+  unlockedBiomes: ['NEUTRAL'], // Start with basic
+
   // Inventory 1: Backpack
   backpack: {
     slots: 20,

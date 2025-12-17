@@ -30,7 +30,11 @@ export const processBattleVictory = (
   const xpAmount = Math.ceil(mobDef.physical.baseHp * 0.5);
   const targetRoot = getMagicRootFromBiome(mobDef.biome);
 
-  // 3. Update Player Data (Immutable pattern)
+  // 3. Calculate Fragments
+  // Fragments based on mob HP + randomness
+  const fragmentsFound = Math.floor(mobDef.physical.baseHp / 5) + Math.floor(Math.random() * 5);
+
+  // 4. Update Player Data (Immutable pattern)
   const updatedRoots = { ...player.magicRoots };
   // Mock Level Up logic: Random chance based on XP amount, or simple threshold
   // For prototype, we just increment the stat if XP is high enough or RNG
@@ -46,6 +50,7 @@ export const processBattleVictory = (
   const updatedProfile: PlayerProfile = {
     ...player,
     magicRoots: updatedRoots,
+    fragments: player.fragments + fragmentsFound,
     grimoire: {
       ...player.grimoire,
       essences: [...player.grimoire.essences, essence]
@@ -56,7 +61,8 @@ export const processBattleVictory = (
     essence,
     xpRoot: targetRoot,
     xpAmount,
-    leveledUp
+    leveledUp,
+    fragmentsFound
   };
 
   return { loot, updatedProfile };

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 import { DuelEngine, generateMockDeck } from '../game/DuelEngine';
 import { MOCK_PLAYER } from '../data/gameData';
 import { MONSTER_DATABASE } from '../data/monsters';
-import { PlayerProfile, LootResult } from '../types';
+import { PlayerProfile, LootResult, Biome } from '../types';
 import { generateDeckForMob } from '../utils/deckGenerator';
 import { processBattleVictory } from '../logic/RewardSystem';
 
@@ -15,9 +15,11 @@ interface BattleContextType {
   latestLoot: LootResult | null;
   clearLoot: () => void;
   
-  // Player State Exposure for Crafting/Persistence
+  // Player State Exposure
   playerProfile: PlayerProfile;
   updatePlayerProfile: (profile: PlayerProfile) => void;
+  gainTerritory: (biome: Biome) => void;
+  gainFragments: (amount: number) => void;
 }
 
 const BattleContext = createContext<BattleContextType | undefined>(undefined);
@@ -33,6 +35,25 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   // Persistent Player State
   const [playerProfile, setPlayerProfile] = useState<PlayerProfile>(MOCK_PLAYER);
+
+  // --- ACTIONS ---
+
+  const gainTerritory = useCallback((biome: Biome) => {
+    setPlayerProfile(prev => {
+        if (prev.unlockedBiomes.includes(biome)) return prev;
+        return {
+            ...prev,
+            unlockedBiomes: [...prev.unlockedBiomes, biome]
+        };
+    });
+  }, []);
+
+  const gainFragments = useCallback((amount: number) => {
+    setPlayerProfile(prev => ({
+        ...prev,
+        fragments: prev.fragments + amount
+    }));
+  }, []);
 
   const startBattle = useCallback((opponentId: string) => {
     setIsTransitioning(true);
@@ -139,7 +160,9 @@ export const BattleProvider: React.FC<{ children: ReactNode }> = ({ children }) 
       latestLoot,
       clearLoot,
       playerProfile,
-      updatePlayerProfile: setPlayerProfile
+      updatePlayerProfile: setPlayerProfile,
+      gainTerritory,
+      gainFragments
     }}>
       {children}
     </BattleContext.Provider>

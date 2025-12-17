@@ -6,19 +6,16 @@ export interface PlayerState {
   velocity: Vector3;
 }
 
-export interface InputState {
-  forward: boolean;
-  backward: boolean;
+export interface MouseInput {
   left: boolean;
   right: boolean;
-  run: boolean;
-  // Action Keys
-  action1: boolean;
-  action2: boolean;
-  action3: boolean;
-  action4: boolean;
-  action5: boolean;
-  attack: boolean;
+  x: number;
+  y: number;
+}
+
+export interface InputState {
+  keys: Record<string, boolean>;
+  mouse: MouseInput;
 }
 
 // Global constants
@@ -26,6 +23,29 @@ export const UNIT_SIZE = 1;
 export const PIXELS_PER_UNIT = 16; 
 export const MOVEMENT_SPEED = 5; 
 export const CHUNK_SIZE = 16; 
+
+// --- VFX TYPES ---
+export type ProjectileType = 'FIREBALL';
+export type EffectType = 'HEAL_BURST' | 'EARTH_WALL';
+
+export interface Projectile {
+  id: string;
+  type: ProjectileType;
+  position: Vector3;
+  velocity: Vector3;
+  damage: number;
+  radius: number;
+  createdAt: number;
+  lifespan: number; // ms
+}
+
+export interface VisualEffect {
+  id: string;
+  type: EffectType;
+  position: Vector3;
+  createdAt: number;
+  duration: number;
+}
 
 // --- WORLD ENTITIES ---
 export interface WorldEntity {
@@ -98,12 +118,12 @@ export interface SoulEssence {
 
 // Ability System
 export type AbilityTrigger = 'ON_PLAY' | 'ON_DEATH' | 'ON_ATTACK' | 'PASSIVE';
-export type EffectType = 'DEAL_DAMAGE' | 'HEAL' | 'BUFF_STATS' | 'DRAW_CARD';
+export type EffectTypeData = 'DEAL_DAMAGE' | 'HEAL' | 'BUFF_STATS' | 'DRAW_CARD';
 export type TargetRequirement = 'NONE' | 'SELF' | 'ENEMY_CREATURE' | 'ENEMY_PLAYER' | 'ALLY_CREATURE';
 
 export interface Ability {
   trigger: AbilityTrigger;
-  effectType: EffectType;
+  effectType: EffectTypeData;
   value: number;
   targetRequirement: TargetRequirement;
 }
@@ -141,6 +161,10 @@ export interface PlayerProfile {
   
   soulCap: number; 
   magicRoots: MagicRoots;
+  
+  // New Currency
+  fragments: number;
+  unlockedBiomes: Biome[];
 
   // Inventory 1: Physical Backpack (Lootable on Death)
   backpack: {
@@ -170,6 +194,7 @@ export interface LootResult {
   xpRoot: keyof MagicRoots;
   xpAmount: number;
   leveledUp: boolean;
+  fragmentsFound: number;
 }
 
 // --- Battle Types (Unchanged) ---

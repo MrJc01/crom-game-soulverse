@@ -1,11 +1,11 @@
-import React, { useRef, useMemo, useState, forwardRef } from 'react';
+import React, { useRef, useMemo, useState, forwardRef, useEffect } from 'react';
 import { useFrame, useThree, extend } from '@react-three/fiber';
 import { Billboard, shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 import { useInput } from '../hooks/useInput';
 import { useSpriteAnimator } from '../hooks/useSpriteAnimator';
 import { createCharacterSpriteSheet } from '../utils/graphicsUtils';
-import { MOVEMENT_SPEED, UNIT_SIZE, PlayerProfile } from '../types';
+import { MOVEMENT_SPEED, UNIT_SIZE } from '../types';
 import { socket } from '../utils/socketClient';
 import { checkAttackHit } from '../utils/combatLogic';
 import { getActiveEntities, getEntityById } from '../utils/worldState'; 
@@ -13,9 +13,9 @@ import { PlayerActionController } from './PlayerActionController';
 import { SoulMinionEffect } from './effects/SoulMinionEffect';
 import { MOCK_PLAYER } from '../data/gameData';
 import { useMobManager } from '../hooks/useMobManager';
+import { ChunkCaptureManager } from './world/ChunkCaptureManager';
 
 // --- CUSTOM SHADER: HEALTH DESATURATION ---
-// Updated to handle UV Offset/Repeat for Sprite Sheets
 const SpriteHealthMaterial = shaderMaterial(
   {
     map: new THREE.Texture(),
@@ -29,7 +29,6 @@ const SpriteHealthMaterial = shaderMaterial(
     uniform vec2 uOffset;
     
     void main() {
-      // Transform UVs based on texture sprite sheet logic
       vUv = uv * uRepeat + uOffset;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
@@ -61,10 +60,13 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const groupRef = (ref as React.MutableRefObject<THREE.Group>) || internalRef;
   const materialRef = useRef<any>(null);
 
-  const input = useInput();
-  const { camera } = useThree();
+  const { keys, mouse } = useInput();
+  const { camera, raycaster } = useThree();
   const [facingRight, setFacingRight] = useState(true);
   
+  // Point-and-Click State
+  const [targetPosition, setTargetPosition] = useState<THREE.Vector3 | null>(null);
+
   // Hook for Mob Logic (Damage/Battle)
   const { processAttackOnMobs } = useMobManager();
 
@@ -72,41 +74,34 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
   const lastEmitTime = useRef(0);
   const EMIT_INTERVAL = 50; 
 
-  // Player Stats (Ideally these come from context, using Mock for visuals in 3D)
   const healthPercent = MOCK_PLAYER.currentHp / MOCK_PLAYER.maxHp;
   const manaPercent = MOCK_PLAYER.currentMana / MOCK_PLAYER.maxMana;
 
-  // --- ASSET LOADING FIX ---
-  // Revert to procedural texture generation to avoid missing file errors
   const texture = useMemo(() => createCharacterSpriteSheet('#3b82f6'), []);
   
-  const isMoving = !locked && (input.forward || input.backward || input.left || input.right);
+  // Animation state driven by whether we have a target position
+  const isMoving = !locked && targetPosition !== null;
   useSpriteAnimator(texture, 4, 0.15, isMoving);
 
-  const moveVec = new THREE.Vector3();
-  const nextPos = new THREE.Vector3();
-  const camForward = new THREE.Vector3();
-  const camRight = new THREE.Vector3();
-
-  // --- COMBAT LOGIC ---
+  // --- COMBAT LOGIC CALLBACK ---
   const handleAttack = (slot: number, direction: THREE.Vector3) => {
     if (locked || !groupRef.current) return;
 
     // 1. Get all active mobs from registry
     const activeMobs = getActiveEntities();
     
-    // 2. Perform Hit Check (Cone: 2.5 units range, 60 degrees (PI/3))
+    // 2. Perform Hit Check (Cone: 4.0 units range, 45 degrees)
     const hits = checkAttackHit(
       groupRef.current.position,
       direction,
-      2.5, 
-      Math.PI / 3, 
+      4.0, 
+      Math.PI / 4, 
       activeMobs
     );
 
     if (hits.length > 0) {
-      // 3. Process Hits via Mob Manager
-      const baseDamage = 20; 
+      // 3. Process Hits (Damage scales with slot for fun)
+      const baseDamage = 10 + (slot * 5); 
       const result = processAttackOnMobs(hits, baseDamage);
 
       // 4. Feedback
@@ -124,14 +119,34 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     }
   };
 
+  // --- MOUSE CLICK NAVIGATION ---
+  useEffect(() => {
+    if (mouse.left && !locked) {
+        // Raycast to floor
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        
+        // Map mouse screen coords to NDC
+        const ndc = new THREE.Vector2(
+            (mouse.x / window.innerWidth) * 2 - 1,
+            -(mouse.y / window.innerHeight) * 2 + 1
+        );
+        
+        raycaster.setFromCamera(ndc, camera);
+        const target = new THREE.Vector3();
+        raycaster.ray.intersectPlane(floorPlane, target);
+
+        if (target) {
+            setTargetPosition(target);
+        }
+    }
+  }, [mouse.left, mouse.x, mouse.y, locked, camera, raycaster]);
+
   useFrame((state, delta) => {
     if (!groupRef.current) return;
     
-    // Update Shader Uniforms
+    // Shader Update
     if (materialRef.current) {
       materialRef.current.uHealth = THREE.MathUtils.lerp(materialRef.current.uHealth, healthPercent, 0.1);
-      
-      // Critical: Sync shader uniforms with texture properties driven by useSpriteAnimator
       if (texture) {
         materialRef.current.uRepeat = texture.repeat;
         materialRef.current.uOffset = texture.offset;
@@ -143,32 +158,28 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     const currentPos = groupRef.current.position;
     const oldPosition = currentPos.clone();
 
-    // 1. Calculate Movement Relative to Camera
-    camera.getWorldDirection(camForward);
-    camForward.y = 0;
-    camForward.normalize();
-
-    camRight.crossVectors(camForward, new THREE.Vector3(0, 1, 0)).normalize();
-
-    moveVec.set(0, 0, 0);
-
-    if (input.forward) moveVec.add(camForward);
-    if (input.backward) moveVec.sub(camForward);
-    if (input.right) moveVec.add(camRight);
-    if (input.left) moveVec.sub(camRight);
-
-    if (moveVec.lengthSq() > 0) {
-      moveVec.normalize();
-      
-      const dot = moveVec.dot(camRight);
-      if (dot > 0.1) setFacingRight(true);
-      if (dot < -0.1) setFacingRight(false);
-
-      const speed = input.run ? MOVEMENT_SPEED * 1.5 : MOVEMENT_SPEED;
-      const moveAmount = speed * delta;
-      
-      nextPos.copy(currentPos).addScaledVector(moveVec, moveAmount);
-      groupRef.current.position.copy(nextPos);
+    // --- MOVEMENT LOGIC (Linear Interpolation towards Click) ---
+    if (targetPosition) {
+        const direction = new THREE.Vector3().subVectors(targetPosition, currentPos);
+        const distance = direction.length();
+        
+        if (distance > 0.1) {
+            direction.normalize();
+            
+            // Facing
+            if (direction.x > 0.1) setFacingRight(true);
+            if (direction.x < -0.1) setFacingRight(false);
+            
+            // Move
+            const moveStep = MOVEMENT_SPEED * delta;
+            // Don't overshoot
+            const actualMove = Math.min(moveStep, distance);
+            
+            groupRef.current.position.addScaledVector(direction, actualMove);
+        } else {
+            // Arrived
+            setTargetPosition(null);
+        }
     }
 
     // Network Emission
@@ -188,6 +199,15 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
 
   return (
     <group ref={groupRef} position={[0, 0, 0]}>
+      
+      {/* Target Marker */}
+      {targetPosition && (
+          <mesh position={[targetPosition.x, 0.02, targetPosition.z]} rotation={[-Math.PI/2, 0, 0]}>
+              <ringGeometry args={[0.3, 0.4, 16]} />
+              <meshBasicMaterial color="#00ff00" transparent opacity={0.5} />
+          </mesh>
+      )}
+
       {/* Mana Amulet */}
       <mesh position={[facingRight ? 0.1 : -0.1, 0.5, 0.05]} scale={0.1}>
         <dodecahedronGeometry args={[1, 0]} />
@@ -200,9 +220,14 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
       </mesh>
 
       <PlayerActionController 
-        input={input} 
+        input={{ keys, mouse }}
         playerPos={groupRef.current?.position || new THREE.Vector3()} 
         onAttack={handleAttack}
+      />
+
+      <ChunkCaptureManager 
+         playerPos={groupRef.current?.position}
+         isMining={keys['KeyL']}
       />
 
       <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>

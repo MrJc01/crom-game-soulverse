@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { InputState } from '../types';
+import { dispatchHotbarSlot, dispatchAbilityUse } from '../utils/gameEvents';
+import { useVFX } from './effects/VFXManager';
 
 interface ActionControllerProps {
   input: InputState;
@@ -11,64 +13,98 @@ interface ActionControllerProps {
 
 export const PlayerActionController: React.FC<ActionControllerProps> = ({ input, playerPos, onAttack }) => {
   const [activeSlot, setActiveSlot] = useState(1);
-  const { mouse, camera } = useThree();
-  const lastAttackTime = useRef(0);
-  const COOLDOWN = 500; // ms
+  const { camera, raycaster } = useThree();
+  const { spawnProjectile, spawnEffect } = useVFX();
 
-  // Slot Selection (1-5)
+  // Cooldown Tracking
+  const cooldowns = useRef<Record<number, number>>({});
+  
+  const SPELL_CONFIG: Record<number, { type: 'PROJECTILE' | 'AOE' | 'WALL', id: string, cd: number }> = {
+    1: { type: 'PROJECTILE', id: 'FIREBALL', cd: 500 },
+    2: { type: 'AOE', id: 'HEAL_BURST', cd: 5000 },
+    3: { type: 'WALL', id: 'EARTH_WALL', cd: 8000 },
+  };
+
+  // Slot Selection (1-0)
   useEffect(() => {
-    if (input.action1) setActiveSlot(1);
-    if (input.action2) setActiveSlot(2);
-    if (input.action3) setActiveSlot(3);
-    if (input.action4) setActiveSlot(4);
-    if (input.action5) setActiveSlot(5);
-  }, [input.action1, input.action2, input.action3, input.action4, input.action5]);
+    let newSlot = activeSlot;
+    if (input.keys['Digit1']) newSlot = 1;
+    if (input.keys['Digit2']) newSlot = 2;
+    if (input.keys['Digit3']) newSlot = 3;
+    if (input.keys['Digit4']) newSlot = 4;
+    if (input.keys['Digit5']) newSlot = 5;
+    if (input.keys['Digit6']) newSlot = 6;
+    if (input.keys['Digit7']) newSlot = 7;
+    if (input.keys['Digit8']) newSlot = 8;
+    if (input.keys['Digit9']) newSlot = 9;
+    if (input.keys['Digit0']) newSlot = 10;
 
-  // Attack Logic (Space)
+    if (newSlot !== activeSlot) {
+        setActiveSlot(newSlot);
+        dispatchHotbarSlot(newSlot);
+    }
+  }, [input.keys, activeSlot]);
+
+  // Attack Logic (Right Mouse Button)
   useFrame(() => {
-    if (input.attack) {
+    if (input.mouse.right) {
       const now = Date.now();
-      if (now - lastAttackTime.current > COOLDOWN) {
-        // Calculate Attack Direction (Mouse relative to Player)
-        const raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, camera);
+      const config = SPELL_CONFIG[activeSlot];
+      
+      // Default basic attack cooldown if no config
+      const cdDuration = config ? config.cd : 300; 
+
+      if (!cooldowns.current[activeSlot] || now > cooldowns.current[activeSlot]) {
         
-        // Raycast against infinite floor plane at Y=0
+        // Raycast logic
         const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const ndc = new THREE.Vector2(
+            (input.mouse.x / window.innerWidth) * 2 - 1,
+            -(input.mouse.y / window.innerHeight) * 2 + 1
+        );
+        raycaster.setFromCamera(ndc, camera);
         const target = new THREE.Vector3();
         raycaster.ray.intersectPlane(floorPlane, target);
-        
-        // Direction from Player to Mouse
-        const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
-        
-        onAttack(activeSlot, direction);
-        lastAttackTime.current = now;
+
+        // Execute Ability
+        if (config) {
+            if (config.type === 'PROJECTILE') {
+                const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
+                spawnProjectile('FIREBALL', playerPos.clone().add(new THREE.Vector3(0, 0.5, 0)), direction);
+            } else if (config.type === 'AOE') {
+                spawnEffect('HEAL_BURST', target);
+                // In a real app, apply healing logic here
+            } else if (config.type === 'WALL') {
+                spawnEffect('EARTH_WALL', target);
+            }
+        } else {
+            // Default Melee logic (Slots 4-0 for now)
+            const direction = new THREE.Vector3().subVectors(target, playerPos).normalize();
+            onAttack(activeSlot, direction);
+        }
+
+        // Apply Cooldown
+        cooldowns.current[activeSlot] = now + cdDuration;
+        dispatchAbilityUse(activeSlot, cdDuration);
       }
     }
   });
 
-  // Visual Feedback: Floating Orb color based on active slot
+  // Visual Feedback
   const getSlotColor = () => {
-    switch(activeSlot) {
-      case 1: return '#ef4444'; // Red (Physical/Fire)
-      case 2: return '#3b82f6'; // Blue (Magic/Ice)
-      case 3: return '#22c55e'; // Green (Nature/Heal)
-      case 4: return '#eab308'; // Yellow (Light)
-      case 5: return '#a855f7'; // Purple (Void)
-      default: return '#ffffff';
-    }
+    const colors = [
+        '#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', 
+        '#ec4899', '#06b6d4', '#f97316', '#64748b', '#ffffff'
+    ];
+    return colors[(activeSlot - 1) % colors.length];
   };
 
   return (
     <group position={[0, 1.2, 0]}>
-      {/* Floating Indicator (Diegetic UI) */}
+      {/* Floating Indicator */}
       <mesh>
         <octahedronGeometry args={[0.08, 0]} />
         <meshBasicMaterial color={getSlotColor()} wireframe />
-      </mesh>
-      <mesh scale={0.5}>
-        <octahedronGeometry args={[0.08, 0]} />
-        <meshBasicMaterial color={getSlotColor()} transparent opacity={0.5} />
       </mesh>
     </group>
   );

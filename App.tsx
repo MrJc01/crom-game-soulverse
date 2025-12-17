@@ -14,6 +14,9 @@ import { MOCK_PLAYER } from './data/gameData';
 import { LootToast } from './components/ui/LootToast';
 import { SoulForge } from './components/world/SoulForge';
 import { CraftingOverlay } from './components/ui/CraftingOverlay';
+import { HotbarHUD } from './components/ui/HotbarHUD';
+import { SpellbookUI } from './components/ui/SpellbookUI';
+import { VFXProvider } from './components/effects/VFXManager';
 
 // --- SELECTION RING COMPONENT ---
 const SelectionRing = ({ position }: { position: THREE.Vector3 }) => {
@@ -110,6 +113,19 @@ const GameContent = () => {
         <CraftingOverlay onClose={() => setIsCrafting(false)} />
       )}
 
+      {/* GLOBAL UI OVERLAYS (When not in battle/menu) */}
+      {!isBattling && !isCrafting && (
+        <>
+          <HotbarHUD />
+          <SpellbookUI />
+          
+          {/* Controls Hint */}
+          <div className="absolute bottom-4 right-4 text-xs text-slate-500 font-mono pointer-events-none">
+             [LMB] Move • [RMB] Cast Ability (1-3) • [L] Channel Land • [M] Grimoire • [E] Interact
+          </div>
+        </>
+      )}
+
       {/* 3D Scene */}
       <Canvas
         shadows={false}
@@ -121,7 +137,7 @@ const GameContent = () => {
           alpha: true,
           powerPreference: "high-performance",
           failIfMajorPerformanceCaveat: false, 
-          preserveDrawingBuffer: false, // Fix: Disabled to save memory and prevent BindToCurrentSequence failed
+          preserveDrawingBuffer: false, 
         }}
         onPointerMissed={handleGroundClick}
         onCreated={({ gl }) => {
@@ -129,27 +145,29 @@ const GameContent = () => {
         }}
       >
         <Suspense fallback={null}>
-          <PixelCamera targetRef={playerRef} />
-          
-          <ProceduralWorld 
-            playerRef={playerRef}
-            onSelectTarget={handleTargetSelect}
-          />
+          <VFXProvider>
+            <PixelCamera targetRef={playerRef} />
+            
+            <ProceduralWorld 
+              playerRef={playerRef}
+              onSelectTarget={handleTargetSelect}
+            />
 
-          {/* ADDED: Soul Forge Object */}
-          <SoulForge 
-            position={[8, 0, 8]} 
-            playerRef={playerRef} 
-            isOpen={isCrafting}
-            onToggleCrafting={setIsCrafting}
-          />
-          
-          {selectedTarget && <SelectionRing position={selectedTarget.pos} />}
+            {/* ADDED: Soul Forge Object */}
+            <SoulForge 
+              position={[8, 0, 8]} 
+              playerRef={playerRef} 
+              isOpen={isCrafting}
+              onToggleCrafting={setIsCrafting}
+            />
+            
+            {selectedTarget && <SelectionRing position={selectedTarget.pos} />}
 
-          {/* Player locked if battling or crafting */}
-          <Player ref={playerRef} locked={isBattling || isTransitioning || isCrafting} />
-          
-          <NetworkManager />
+            {/* Player locked if battling or crafting */}
+            <Player ref={playerRef} locked={isBattling || isTransitioning || isCrafting} />
+            
+            <NetworkManager />
+          </VFXProvider>
           
           <Stats className="!absolute !bottom-0 !left-auto !right-0 !top-auto" />
         </Suspense>

@@ -4,6 +4,7 @@ import { SoulEssence, Card } from '../../types';
 import { forgeCardFromEssence, harvestMob } from '../../logic/SoulHarvestManager';
 import { GameCard } from './GameCard';
 import { CardInstance } from '../../game/DuelEngine';
+import { useBattle } from '../../context/BattleContext';
 
 interface CardForgeProps {
   onClose: () => void;
@@ -17,17 +18,25 @@ const MOCK_ESSENCES: SoulEssence[] = [
 ];
 
 export const CardForge: React.FC<CardForgeProps> = ({ onClose }) => {
+  const { playerProfile, gainFragments } = useBattle();
   const [selectedEssence, setSelectedEssence] = useState<SoulEssence | null>(null);
   const [forgedCard, setForgedCard] = useState<Card | null>(null);
   const [isForging, setIsForging] = useState(false);
 
+  const COST_PER_FORGE = 5;
+
   const handleForge = () => {
     if (!selectedEssence) return;
+    if (playerProfile.fragments < COST_PER_FORGE) return;
+
     setIsForging(true);
     
+    // Deduct cost
+    gainFragments(-COST_PER_FORGE);
+
     // Simulate animation delay
     setTimeout(() => {
-      const newCard = forgeCardFromEssence(selectedEssence, MOCK_PLAYER);
+      const newCard = forgeCardFromEssence(selectedEssence, playerProfile);
       setForgedCard(newCard);
       setIsForging(false);
     }, 1500);
@@ -47,9 +56,15 @@ export const CardForge: React.FC<CardForgeProps> = ({ onClose }) => {
 
         {/* LEFT PANEL: ESSENCE LIST */}
         <div className="w-1/3 border-r border-slate-700 p-4 bg-slate-950/50 overflow-y-auto">
-          <h2 className="text-xl text-yellow-500 font-bold mb-4 flex items-center gap-2">
-            <span>✨</span> SOUL ESSENCES
-          </h2>
+          <div className="mb-4">
+             <h2 className="text-xl text-yellow-500 font-bold flex items-center gap-2">
+                <span>✨</span> ESSENCES
+             </h2>
+             <div className="text-sm text-cyan-400 mt-1">
+                 FRAGMENTS: {playerProfile.fragments}
+             </div>
+          </div>
+
           <div className="space-y-2">
             {MOCK_ESSENCES.map((ess) => (
               <div 
@@ -84,16 +99,16 @@ export const CardForge: React.FC<CardForgeProps> = ({ onClose }) => {
               </div>
               
               <h3 className="text-2xl font-bold text-white mb-2">Ready to Forge</h3>
-              <p className="text-slate-400 text-sm max-w-xs mx-auto mb-8">
-                Combining {selectedEssence.sourceName} with your magical affinity will create a unique card.
+              <p className="text-slate-400 text-sm max-w-xs mx-auto mb-4">
+                Combine {selectedEssence.sourceName} + {COST_PER_FORGE} Fragments to create a card.
               </p>
 
               <button 
                 onClick={handleForge}
-                disabled={isForging}
+                disabled={isForging || playerProfile.fragments < COST_PER_FORGE}
                 className="bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-3 px-8 rounded border-2 border-yellow-800 shadow-[4px_4px_0_0_black] active:translate-y-1 active:shadow-none transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isForging ? "CHANNELING..." : "FORGE CARD"}
+                {isForging ? "CHANNELING..." : `FORGE (-${COST_PER_FORGE} Frags)`}
               </button>
             </div>
           )}
@@ -109,7 +124,6 @@ export const CardForge: React.FC<CardForgeProps> = ({ onClose }) => {
             <div className="flex flex-col items-center animate-in zoom-in duration-500">
               <h3 className="text-3xl font-bold text-yellow-400 mb-6 drop-shadow-md">SUCCESS!</h3>
               
-              {/* Reuse GameCard for preview, but we need to convert to CardInstance briefly or mock it */}
               <div className="transform scale-125 mb-8">
                 <GameCard 
                   variant="HAND" 
