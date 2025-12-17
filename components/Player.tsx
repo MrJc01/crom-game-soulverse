@@ -15,15 +15,22 @@ import { MOCK_PLAYER } from '../data/gameData';
 import { useMobManager } from '../hooks/useMobManager';
 
 // --- CUSTOM SHADER: HEALTH DESATURATION ---
+// Updated to handle UV Offset/Repeat for Sprite Sheets
 const SpriteHealthMaterial = shaderMaterial(
   {
     map: new THREE.Texture(),
     uHealth: 1.0, 
+    uRepeat: new THREE.Vector2(1, 1),
+    uOffset: new THREE.Vector2(0, 0),
   },
   `
     varying vec2 vUv;
+    uniform vec2 uRepeat;
+    uniform vec2 uOffset;
+    
     void main() {
-      vUv = uv;
+      // Transform UVs based on texture sprite sheet logic
+      vUv = uv * uRepeat + uOffset;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
     }
   `,
@@ -123,6 +130,12 @@ export const Player = forwardRef<THREE.Group, PlayerProps>(({ locked = false }, 
     // Update Shader Uniforms
     if (materialRef.current) {
       materialRef.current.uHealth = THREE.MathUtils.lerp(materialRef.current.uHealth, healthPercent, 0.1);
+      
+      // Critical: Sync shader uniforms with texture properties driven by useSpriteAnimator
+      if (texture) {
+        materialRef.current.uRepeat = texture.repeat;
+        materialRef.current.uOffset = texture.offset;
+      }
     }
 
     if (locked) return;
